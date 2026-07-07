@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>プロフィール</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span><h1>サポートスタッフ募集</h1></div>
+      <div class="who"><button class="linklike" onclick="location.href='jobs.html'">募集ページへ戻る</button></div>
+    </div>
+  </header>
+
+  <main class="wrap-narrow" style="padding-top:30px;">
+    <div class="card">
+      <h2>プロフィール</h2>
+      <p class="lead" id="lead">氏名と住所は領収書に記載されます。正確にご入力ください。</p>
+      <div id="msg"></div>
+      <label class="field"><span>メールアドレス</span><input id="email" disabled></label>
+      <label class="field"><span>氏名</span><input id="name" placeholder="山田 太郎"></label>
+      <label class="field"><span>住所</span><textarea id="address" rows="2" placeholder="兵庫県…"></textarea></label>
+      <button class="btn-primary btn-block" id="save">保存する</button>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if (!requireLogin()) {}
+    const qs = new URLSearchParams(location.search);
+    const isFirst = qs.get('first') === '1';
+    if (isFirst) document.getElementById('lead').textContent = '初回ログインです。氏名と住所をご登録ください（領収書に記載されます）。';
+
+    document.getElementById('email').value = currentUser().email || '';
+    (async () => {
+      const r = await api('getProfile');
+      if (r.ok) {
+        document.getElementById('name').value = r.profile.name || '';
+        document.getElementById('address').value = r.profile.address || '';
+      }
+    })();
+
+    document.getElementById('save').addEventListener('click', async () => {
+      const name = document.getElementById('name').value.trim();
+      const address = document.getElementById('address').value.trim();
+      const msg = document.getElementById('msg');
+      if (!name) { msg.innerHTML = '<div class="msg msg-err">氏名を入力してください。</div>'; return; }
+      const r = await api('saveProfile', { name, address });
+      if (r.ok) {
+        const u = currentUser(); u.name = name; u.address = address;
+        localStorage.setItem('ss_user', JSON.stringify(u));
+        if (isFirst) { location.href = 'jobs.html'; return; }
+        msg.innerHTML = '<div class="msg msg-ok">保存しました。</div>';
+      } else {
+        msg.innerHTML = '<div class="msg msg-err">保存に失敗しました。</div>';
+      }
+    });
+  </script>
+</body>
+</html>

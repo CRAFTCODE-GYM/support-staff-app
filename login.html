@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ログイン中…</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span><h1>サポートスタッフ募集</h1></div>
+    </div>
+  </header>
+  <main class="wrap-narrow" style="padding-top:40px;">
+    <div class="card">
+      <div id="status" class="spinner">ログインを確認しています…</div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    (async () => {
+      const qs = new URLSearchParams(location.search);
+      const email = qs.get('email');
+      const token = qs.get('token');
+      const status = document.getElementById('status');
+      if (!email || !token) {
+        status.outerHTML = '<div class="msg msg-err">リンクが正しくありません。</div><a class="linklike" href="index.html">ログイン画面へ</a>';
+        return;
+      }
+      try {
+        const r = await api('verifyToken', { email, token });
+        if (r.ok) {
+          setSession(email, r.session, r.user);
+          // 名前未登録なら先にプロフィールへ
+          if (!r.user.name) location.href = 'profile.html?first=1';
+          else location.href = r.user.isAdmin ? 'admin.html' : 'jobs.html';
+        } else {
+          const reason = r.error === 'token_expired' ? 'リンクの有効期限が切れています。' : 'リンクが無効です。';
+          status.outerHTML = '<div class="msg msg-err">' + reason + '</div><a class="linklike" href="index.html">ログインリンクを再送する</a>';
+        }
+      } catch (e) {
+        status.outerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div><a class="linklike" href="index.html">ログイン画面へ</a>';
+      }
+    })();
+  </script>
+</body>
+</html>

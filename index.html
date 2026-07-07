@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ログイン｜サポートスタッフ募集</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span>
+        <h1>サポートスタッフ募集</h1>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap-narrow" style="padding-top:40px;">
+    <div class="card">
+      <h2>ログイン</h2>
+      <p class="lead">メールアドレスを入力してください。ログイン用のリンクをメールでお送りします。</p>
+      <div id="msg"></div>
+
+      <div id="form-area">
+        <label class="field">
+          <span>メールアドレス</span>
+          <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+        </label>
+        <button class="btn-primary btn-block" id="send">ログインリンクを送る</button>
+      </div>
+
+      <div id="sent-area" style="display:none;">
+        <div class="msg msg-ok">メールを送信しました。届いたリンクを開いてログインしてください。</div>
+        <p class="note">メールが届かない場合は迷惑メールフォルダもご確認ください。リンクの有効期限は30分です。</p>
+        <button class="linklike" onclick="location.reload()">別のアドレスで送り直す</button>
+      </div>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // 既にログイン済みならスキップ
+    if (getSession().email) location.href = 'jobs.html';
+
+    const btn = document.getElementById('send');
+    const msg = document.getElementById('msg');
+    btn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      msg.innerHTML = '';
+      if (!email || email.indexOf('@') < 0) {
+        msg.innerHTML = '<div class="msg msg-err">メールアドレスを正しく入力してください。</div>';
+        return;
+      }
+      btn.disabled = true; btn.textContent = '送信中…';
+      try {
+        const r = await api('requestLogin', { email });
+        if (r.ok) {
+          document.getElementById('form-area').style.display = 'none';
+          document.getElementById('sent-area').style.display = 'block';
+        } else {
+          msg.innerHTML = '<div class="msg msg-err">送信に失敗しました（' + (r.error || '') + '）。</div>';
+        }
+      } catch (e) {
+        msg.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
+      } finally {
+        btn.disabled = false; btn.textContent = 'ログインリンクを送る';
+      }
+    });
+    document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+  </script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>サポートスタッフ募集</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span>
+        <div><h1>サポートスタッフ募集</h1></div>
+      </div>
+      <div class="who">
+        <span><b id="uname">―</b> さん</span>
+        <button class="linklike" onclick="location.href='profile.html'">プロフィール</button>
+        <button class="linklike" onclick="logout()">ログアウト</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <nav class="tabs">
+      <button class="tab active" id="tab-open" onclick="switchTab('open')">募集中</button>
+      <button class="tab" id="tab-mine" onclick="switchTab('mine')">参加予定</button>
+    </nav>
+    <div id="msg"></div>
+    <div id="list"><div class="spinner">読み込み中…</div></div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if (!requireLogin()) {}
+    document.getElementById('uname').textContent = currentUser().name || currentUser().email || '―';
+    let currentTab = 'open';
+
+    function switchTab(t) {
+      currentTab = t;
+      document.getElementById('tab-open').classList.toggle('active', t === 'open');
+      document.getElementById('tab-mine').classList.toggle('active', t === 'mine');
+      load();
+    }
+
+    async function load() {
+      const list = document.getElementById('list');
+      list.innerHTML = '<div class="spinner">読み込み中…</div>';
+      try {
+        const r = await api(currentTab === 'open' ? 'listJobs' : 'listMyJobs');
+        if (!r.ok) { list.innerHTML = '<div class="msg msg-err">読み込みに失敗しました。</div>'; return; }
+        render(r.events);
+      } catch (e) {
+        list.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
+      }
+    }
+
+    function render(events) {
+      const list = document.getElementById('list');
+      if (!events || events.length === 0) {
+        list.innerHTML = currentTab === 'open'
+          ? '<div class="empty">いま募集中の仕事はありません。<br>新しい募集が出るとここに表示されます。</div>'
+          : '<div class="empty">参加予定の仕事はまだありません。<br>「募集中」タブから気になる仕事に応募してみてください。</div>';
+        return;
+      }
+      let html = '';
+      events.forEach(ev => {
+        if (!ev.jobs.length) return;
+        html += '<section class="event"><div class="event-head"><h2>' + esc(ev.event_name) + '</h2>' +
+                (ev.venue ? '<span class="venue">@' + esc(ev.venue) + '</span>' : '') + '</div>';
+        ev.jobs.forEach(j => { html += jobCard(j); });
+        html += '</section>';
+      });
+      list.innerHTML = html;
+    }
+
+    function jobCard(j) {
+      const meta = [];
+      meta.push('<span class="fee">' + yen(j.fee) + '</span>');
+      if (j.transport_included) meta.push('<span class="chip">交通費込み</span>');
+      // 現在の承認数バッジ（募集中タブのみ）。気軽に応募できるよう状況を可視化
+      if (currentTab === 'open') {
+        meta.push(j.confirmed > 0
+          ? '<span class="chip chip-count">' + j.confirmed + '名 参加予定</span>'
+          : '<span class="chip chip-zero">まだ参加者なし</span>');
+      }
+
+      let action = '';
+      if (currentTab === 'mine') {
+        // 参加予定タブ: 謝礼の受領フロー
+        if (j.pay_state === 'received') {
+          action = '<span class="state-label state-received">受領済み</span>' +
+            (j.receipt_url ? '<a class="receipt-link" href="' + j.receipt_url + '" target="_blank">領収書を見る</a>' : '');
+        } else if (j.pay_state === 'paid') {
+          action = '<button class="btn btn-receive" onclick="receive(\'' + j.app_id + '\')">謝礼を受け取りました</button>';
+        } else {
+          action = '<span class="state-label state-assigned">依頼決定</span>';
+        }
+      } else if (j.state === 'assigned') {
+        action = '<span class="state-label state-assigned">依頼決定</span>';
+      } else if (j.state === 'applied') {
+        action = '<button class="btn btn-ghost" onclick="cancel(\'' + j.job_id + '\')">承認待ち<br><span style="font-weight:500;font-size:11px;">タップで取消</span></button>';
+      } else if (j.state === 'rejected') {
+        action = '<span class="state-label state-rejected">今回は見送り</span>';
+      } else {
+        action = '<button class="btn btn-apply" onclick="apply(\'' + j.job_id + '\')">参加する</button>';
+      }
+
+      return '<div class="job"><div class="job-main">' +
+        '<div class="job-date">' + esc(jpDate(j.work_date)) + (j.time_text ? '<span class="time">' + esc(j.time_text) + '</span>' : '') + '</div>' +
+        '<div class="job-title">' + esc(j.title) + '</div>' +
+        '<div class="job-meta">' + meta.join('') + '</div>' +
+        '</div><div class="action">' + action + '</div></div>';
+    }
+
+    // 謝礼の受領確認 → 領収書自動発行
+    async function receive(appId) {
+      if (!confirm('謝礼を受け取りましたか？\n領収書が自動発行されます。')) return;
+      flash('領収書を発行しています…', true);
+      try {
+        const r = await api('confirmReceipt', { app_id: appId });
+        if (r.ok) {
+          flash('受領を記録しました。領収書が発行されました。', true);
+          load();
+        } else if (r.error === 'profile_incomplete') {
+          flash('先にプロフィールで氏名を登録してください。', false);
+          setTimeout(() => location.href = 'profile.html', 1500);
+        } else if (r.error === 'not_paid_yet') {
+          flash('管理者側の支払い処理がまだのようです。担当者にご確認ください。', false);
+        } else {
+          flash('処理に失敗しました。', false);
+        }
+      } catch (e) { flash('通信エラーが発生しました。', false); }
+    }
+
+    async function apply(jobId) {
+      flash('');
+      try {
+        const r = await api('apply', { job_id: jobId });
+        if (r.ok) { flash('応募しました。管理者の承認をお待ちください。', true); load(); }
+        else flash('応募に失敗しました。', false);
+      } catch (e) { flash('通信エラーが発生しました。', false); }
+    }
+    async function cancel(jobId) {
+      if (!confirm('この応募を取り消しますか？')) return;
+      try {
+        const r = await api('cancelApply', { job_id: jobId });
+        if (r.ok) load(); else flash('取消できませんでした。', false);
+      } catch (e) { flash('通信エラーが発生しました。', false); }
+    }
+    function flash(text, ok) {
+      const m = document.getElementById('msg');
+      m.innerHTML = text ? '<div class="msg ' + (ok ? 'msg-ok' : 'msg-err') + '">' + esc(text) + '</div>' : '';
+      if (text && ok) setTimeout(() => { m.innerHTML = ''; }, 3000);
+    }
+    function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+    load();
+  </script>
+</body>
+</html>

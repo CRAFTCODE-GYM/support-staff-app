@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理ダッシュボード</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span>
+        <div><h1>管理ダッシュボード</h1><div class="sub">サポートスタッフ募集</div></div>
+      </div>
+      <div class="who"><span><b id="uname">―</b></span><button class="linklike" onclick="logout()">ログアウト</button></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <nav class="tabs">
+      <button class="tab active" id="tab-recruit" onclick="switchTab('recruit')">承認・領収書</button>
+      <button class="tab" id="tab-setup" onclick="switchTab('setup')">大会・仕事の設定</button>
+    </nav>
+    <div id="msg"></div>
+
+    <!-- ===== 承認・領収書 ===== -->
+    <section id="view-recruit">
+      <div id="recruit-list"><div class="spinner">読み込み中…</div></div>
+    </section>
+
+    <!-- ===== 設定 ===== -->
+    <section id="view-setup" style="display:none;">
+      <button class="btn-primary" style="padding:10px 16px;border-radius:9px;margin-bottom:6px;" onclick="openEvent()">＋ 大会を追加</button>
+      <div id="setup-list" style="margin-top:14px;"><div class="spinner">読み込み中…</div></div>
+    </section>
+  </main>
+
+  <!-- 大会モーダル -->
+  <div class="modal-bg" id="modal-event">
+    <div class="modal">
+      <h3 id="event-modal-title">大会を追加</h3>
+      <input type="hidden" id="ev-id">
+      <label class="field"><span>大会名</span><input id="ev-name" placeholder="インターハイ"></label>
+      <label class="field"><span>会場</span><input id="ev-venue" placeholder="グリーンアリーナ"></label>
+      <div class="row">
+        <button class="btn-primary btn-block" onclick="saveEvent()">保存</button>
+        <button class="mini btn-block" onclick="closeModal('modal-event')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 仕事モーダル -->
+  <div class="modal-bg" id="modal-job">
+    <div class="modal">
+      <h3 id="job-modal-title">仕事を追加</h3>
+      <input type="hidden" id="job-id">
+      <input type="hidden" id="job-event-id">
+      <label class="field"><span>作業日</span><input type="date" id="job-date"></label>
+      <label class="field"><span>時間（自由入力）</span><input id="job-time" placeholder="15:00-19:00 / 時間未定 など"></label>
+      <label class="field"><span>仕事内容</span><input id="job-title" placeholder="機材搬入・設営 / 撤収作業 など"></label>
+      <div class="row">
+        <label class="field"><span>謝礼（円）</span><input type="number" id="job-fee" placeholder="5000"></label>
+        <label class="field"><span>交通費</span>
+          <select id="job-transport"><option value="true">込み</option><option value="false">別</option></select>
+        </label>
+      </div>
+      <label class="field"><span>状態</span>
+        <select id="job-status"><option value="open">募集中</option><option value="closed">締切</option></select>
+      </label>
+      <div class="row">
+        <button class="btn-primary btn-block" onclick="saveJob()">保存</button>
+        <button class="mini btn-block" onclick="closeModal('modal-job')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 領収書プレビュー/補正モーダル -->
+  <div class="modal-bg" id="modal-receipt">
+    <div class="modal">
+      <h3>領収書の発行</h3>
+      <p class="note" style="margin-top:-8px;">内容を確認し、必要なら補正してから発行してください。</p>
+      <input type="hidden" id="rc-app-id">
+      <label class="field"><span>宛名（受領者氏名）</span><input id="rc-payee"></label>
+      <label class="field"><span>住所</span><textarea id="rc-address" rows="2"></textarea></label>
+      <div class="row">
+        <label class="field"><span>金額（円）</span><input type="number" id="rc-amount"></label>
+        <label class="field"><span>発行日</span><input type="date" id="rc-date"></label>
+      </div>
+      <label class="field"><span>但し書き（大会名）</span><input id="rc-event"></label>
+      <label class="field"><span>内容</span><input id="rc-item"></label>
+      <div class="row">
+        <button class="btn-primary btn-block" id="rc-generate" onclick="generateReceipt()">PDFを発行</button>
+        <button class="mini btn-block" onclick="closeModal('modal-receipt')">閉じる</button>
+      </div>
+      <div id="rc-result" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    if (!requireLogin()) {}
+    if (!currentUser().isAdmin) { location.href = 'jobs.html'; }
+    document.getElementById('uname').textContent = currentUser().name || currentUser().email;
+
+    let DATA = { events: [], jobs: [], applications: [] };
+
+    function switchTab(t) {
+      document.getElementById('tab-recruit').classList.toggle('active', t === 'recruit');
+      document.getElementById('tab-setup').classList.toggle('active', t === 'setup');
+      document.getElementById('view-recruit').style.display = t === 'recruit' ? 'block' : 'none';
+      document.getElementById('view-setup').style.display = t === 'setup' ? 'block' : 'none';
+      if (t === 'recruit') loadRecruit(); else loadSetup();
+    }
+
+    async function loadAll() {
+      const [ev, ap] = await Promise.all([api('adminListEvents'), api('adminListApplications')]);
+      if (ev.ok) { DATA.events = ev.events; DATA.jobs = ev.jobs; }
+      if (ap.ok) { DATA.applications = ap.applications; }
+    }
+
+    // ===== 承認・領収書ビュー =====
+    async function loadRecruit() {
+      const box = document.getElementById('recruit-list');
+      box.innerHTML = '<div class="spinner">読み込み中…</div>';
+      await loadAll();
+      const evById = {}; DATA.events.forEach(e => evById[e.event_id] = e);
+      const jobsByEvent = {}; DATA.jobs.forEach(j => { (jobsByEvent[j.event_id] = jobsByEvent[j.event_id] || []).push(j); });
+      const appsByJob = {}; DATA.applications.forEach(a => { (appsByJob[a.job_id] = appsByJob[a.job_id] || []).push(a); });
+
+      if (!DATA.events.length) { box.innerHTML = '<div class="empty">大会が未登録です。「大会・仕事の設定」から追加してください。</div>'; return; }
+      let html = '';
+      DATA.events.forEach(ev => {
+        const jobs = jobsByEvent[ev.event_id] || [];
+        const assignedCount = (DATA.applications.filter(a => a.event_id === ev.event_id && a.status === 'assigned')).length;
+        html += '<section class="event"><div class="event-head"><h2>' + esc(ev.name) + '</h2>' +
+                (ev.venue ? '<span class="venue">@' + esc(ev.venue) + '</span>' : '') + '</div>';
+        if (assignedCount > 0) {
+          html += '<button class="mini mini-pdf" style="margin:0 4px 10px;" onclick="bulkReceipts(\'' + ev.event_id + '\')">この大会の確定者全員の領収書を一括発行（' + assignedCount + '名）</button>';
+        }
+        jobs.forEach(j => {
+          const apps = appsByJob[j.job_id] || [];
+          const approved = apps.filter(a => a.status === 'assigned').length;
+          const waiting = apps.filter(a => a.status === 'applied').length;
+          const received = apps.filter(a => a.pay_state === 'received').length;
+          html += '<div class="job" style="display:block;"><div class="job-main">' +
+            '<div class="job-date">' + esc(jpDate(j.work_date)) + (j.time_text ? '<span class="time">' + esc(j.time_text) + '</span>' : '') + '</div>' +
+            '<div class="job-title">' + esc(j.title) + ' ・ <span class="fee">' + yen(j.fee) + '</span>' +
+            ' <span class="badge badge-assigned">承認 ' + approved + '名</span>' +
+            (waiting ? ' <span class="badge badge-applied">承認待ち ' + waiting + '名</span>' : '') +
+            (received ? ' <span class="badge badge-received">受領済み ' + received + '名</span>' : '') + '</div>';
+          if (!apps.length) {
+            html += '<div class="note" style="margin-top:8px;">応募はまだありません。</div>';
+          } else {
+            html += '<div style="margin-top:10px;">';
+            apps.forEach(a => { html += applicantRow(a); });
+            html += '</div>';
+          }
+          html += '</div></div>';
+        });
+        html += '</section>';
+      });
+      box.innerHTML = html;
+    }
+
+    function applicantRow(a) {
+      let badge;
+      if (a.status === 'assigned') {
+        if (a.pay_state === 'received') badge = '<span class="badge badge-received">受領確認済み</span>';
+        else if (a.pay_state === 'paid') badge = '<span class="badge badge-paid">支払済み・受領待ち</span>';
+        else badge = '<span class="badge badge-assigned">依頼決定・未払い</span>';
+      } else if (a.status === 'applied') {
+        badge = '<span class="badge badge-applied">承認待ち</span>';
+      } else {
+        badge = '<span class="badge" style="background:#f4eaea;color:#b4322a;">見送り</span>';
+      }
+
+      let acts = '';
+      if (a.status === 'applied') {
+        acts = '<button class="mini mini-approve" onclick="decide(\'' + a.app_id + '\',\'assigned\')">承認</button>' +
+               '<button class="mini mini-reject" onclick="decide(\'' + a.app_id + '\',\'rejected\')">見送り</button>';
+      } else if (a.status === 'assigned') {
+        if (a.pay_state === 'received') {
+          acts = (a.receipt_url ? '<a class="mini mini-pdf" style="text-decoration:none;" href="' + a.receipt_url + '" target="_blank">領収書</a>' : '');
+        } else if (a.pay_state === 'paid') {
+          acts = '<button class="mini" onclick="markPaid(\'' + a.app_id + '\', false)">支払取消</button>' +
+                 '<button class="mini mini-pdf" onclick="openReceipt(\'' + a.app_id + '\')">手動発行</button>';
+        } else {
+          acts = '<button class="mini mini-approve" onclick="markPaid(\'' + a.app_id + '\', true)">支払済みにする</button>' +
+                 '<button class="mini mini-pdf" onclick="openReceipt(\'' + a.app_id + '\')">手動発行</button>' +
+                 '<button class="mini" onclick="decide(\'' + a.app_id + '\',\'applied\')">取消</button>';
+        }
+      } else {
+        acts = '<button class="mini" onclick="decide(\'' + a.app_id + '\',\'applied\')">戻す</button>';
+      }
+      return '<div class="applicant"><div>' +
+        '<div class="name">' + esc(a.user_name || a.user_email) + ' ' + badge + '</div>' +
+        (a.user_address ? '<div class="addr">' + esc(a.user_address) + '</div>' : '<div class="addr" style="color:#b4322a;">住所未登録</div>') +
+        '</div><div class="acts">' + acts + '</div></div>';
+    }
+
+    // 支払済みの記録/取消。スタッフ側に「謝礼を受け取りました」ボタンが出る
+    async function markPaid(appId, paid) {
+      if (paid && !confirm('現金を渡しましたか？\n支払済みにすると、スタッフ側に受領確認ボタンが表示されます。')) return;
+      const r = await api('adminMarkPaid', { app_id: appId, paid: paid });
+      if (r.ok) loadRecruit();
+      else if (r.error === 'already_received') flash('受領確認済みのため取消できません。', false);
+      else flash('処理に失敗しました。', false);
+    }
+
+    async function decide(appId, decision) {
+      const r = await api('adminDecide', { app_id: appId, decision });
+      if (r.ok) loadRecruit(); else flash('処理に失敗しました。', false);
+    }
+
+    // ===== 領収書 =====
+    function openReceipt(appId) {
+      const a = DATA.applications.find(x => x.app_id === appId);
+      if (!a) return;
+      document.getElementById('rc-app-id').value = appId;
+      document.getElementById('rc-payee').value = a.user_name || '';
+      document.getElementById('rc-address').value = a.user_address || '';
+      document.getElementById('rc-amount').value = a.fee || 0;
+      document.getElementById('rc-date').value = a.work_date || '';
+      document.getElementById('rc-event').value = a.event_name || '';
+      document.getElementById('rc-item').value = a.title || '';
+      document.getElementById('rc-result').innerHTML = '';
+      openModal('modal-receipt');
+    }
+
+    async function generateReceipt() {
+      const btn = document.getElementById('rc-generate');
+      btn.disabled = true; btn.textContent = '発行中…';
+      const params = {
+        app_id: document.getElementById('rc-app-id').value,
+        payee_name: document.getElementById('rc-payee').value,
+        payee_address: document.getElementById('rc-address').value,
+        amount: document.getElementById('rc-amount').value,
+        issue_date: document.getElementById('rc-date').value,
+        event_name: document.getElementById('rc-event').value,
+        item_text: document.getElementById('rc-item').value,
+      };
+      try {
+        const r = await api('adminGenerateReceipt', params);
+        if (r.ok) {
+          document.getElementById('rc-result').innerHTML =
+            '<div class="msg msg-ok">領収書 No.' + r.receipt_no + ' を発行しました。</div>' +
+            '<a class="btn-primary btn-block" style="display:block;text-align:center;text-decoration:none;" href="' + r.pdf_url + '" target="_blank">PDFを開く</a>';
+        } else {
+          document.getElementById('rc-result').innerHTML = '<div class="msg msg-err">発行に失敗しました（' + (r.error||'') + '）。</div>';
+        }
+      } catch (e) {
+        document.getElementById('rc-result').innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
+      } finally {
+        btn.disabled = false; btn.textContent = 'PDFを発行';
+      }
+    }
+
+    async function bulkReceipts(eventId) {
+      if (!confirm('この大会の確定者全員分の領収書を発行します。よろしいですか？')) return;
+      flash('一括発行中です…', true);
+      try {
+        const r = await api('adminGenerateReceiptsBulk', { event_id: eventId });
+        if (r.ok) {
+          let links = r.receipts.map(x => '<a href="' + x.pdf_url + '" target="_blank">' + esc(x.payee_name||('No.'+x.receipt_no)) + '</a>').join(' ／ ');
+          flash(r.count + '名分の領収書を発行しました： ' + links, true, true);
+        } else flash('一括発行に失敗しました。', false);
+      } catch (e) { flash('通信エラーが発生しました。', false); }
+    }
+
+    // ===== 設定ビュー =====
+    async function loadSetup() {
+      const box = document.getElementById('setup-list');
+      box.innerHTML = '<div class="spinner">読み込み中…</div>';
+      await loadAll();
+      const jobsByEvent = {}; DATA.jobs.forEach(j => { (jobsByEvent[j.event_id] = jobsByEvent[j.event_id] || []).push(j); });
+      if (!DATA.events.length) { box.innerHTML = '<div class="empty">まだ大会がありません。上のボタンから追加してください。</div>'; return; }
+      let html = '';
+      DATA.events.forEach(ev => {
+        html += '<section class="event"><div class="event-head"><h2>' + esc(ev.name) + '</h2>' +
+                (ev.venue ? '<span class="venue">@' + esc(ev.venue) + '</span>' : '') +
+                '<button class="linklike" style="margin-left:8px;" onclick="openEvent(\'' + ev.event_id + '\')">編集</button></div>';
+        (jobsByEvent[ev.event_id] || []).forEach(j => {
+          html += '<div class="job"><div class="job-main">' +
+            '<div class="job-date">' + esc(jpDate(j.work_date)) + (j.time_text ? '<span class="time">' + esc(j.time_text) + '</span>' : '') + '</div>' +
+            '<div class="job-title">' + esc(j.title) + ' ・ <span class="fee">' + yen(j.fee) + '</span>' +
+            (j.transport_included ? ' <span class="chip">交通費込み</span>' : '') +
+            (j.status === 'closed' ? ' <span class="note">【募集締切】</span>' : '') + '</div>' +
+            '</div><div class="action"><button class="mini" onclick=\'editJob(' + JSON.stringify(j).replace(/'/g,"&#39;") + ')\'>編集</button></div></div>';
+        });
+        html += '<button class="mini mini-pdf" style="margin-top:4px;" onclick="openJob(\'' + ev.event_id + '\')">＋ 仕事を追加</button></section>';
+      });
+      box.innerHTML = html;
+    }
+
+    // 大会モーダル
+    function openEvent(id) {
+      document.getElementById('ev-id').value = id || '';
+      const ev = id ? DATA.events.find(e => e.event_id === id) : null;
+      document.getElementById('event-modal-title').textContent = id ? '大会を編集' : '大会を追加';
+      document.getElementById('ev-name').value = ev ? ev.name : '';
+      document.getElementById('ev-venue').value = ev ? ev.venue : '';
+      openModal('modal-event');
+    }
+    async function saveEvent() {
+      const params = { event_id: document.getElementById('ev-id').value, name: document.getElementById('ev-name').value, venue: document.getElementById('ev-venue').value };
+      const r = await api('adminSaveEvent', params);
+      if (r.ok) { closeModal('modal-event'); loadSetup(); } else flash('保存に失敗しました。', false);
+    }
+
+    // 仕事モーダル
+    function openJob(eventId) {
+      document.getElementById('job-id').value = '';
+      document.getElementById('job-event-id').value = eventId;
+      document.getElementById('job-modal-title').textContent = '仕事を追加';
+      ['job-date','job-time','job-title','job-fee'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('job-transport').value = 'true';
+      document.getElementById('job-status').value = 'open';
+      openModal('modal-job');
+    }
+    function editJob(j) {
+      document.getElementById('job-id').value = j.job_id;
+      document.getElementById('job-event-id').value = j.event_id;
+      document.getElementById('job-modal-title').textContent = '仕事を編集';
+      document.getElementById('job-date').value = j.work_date || '';
+      document.getElementById('job-time').value = j.time_text || '';
+      document.getElementById('job-title').value = j.title || '';
+      document.getElementById('job-fee').value = j.fee || '';
+      document.getElementById('job-transport').value = j.transport_included ? 'true' : 'false';
+      document.getElementById('job-status').value = j.status || 'open';
+      openModal('modal-job');
+    }
+    async function saveJob() {
+      const params = {
+        job_id: document.getElementById('job-id').value,
+        event_id: document.getElementById('job-event-id').value,
+        work_date: document.getElementById('job-date').value,
+        time_text: document.getElementById('job-time').value,
+        title: document.getElementById('job-title').value,
+        fee: document.getElementById('job-fee').value || 0,
+        transport_included: document.getElementById('job-transport').value === 'true',
+        status: document.getElementById('job-status').value,
+      };
+      const r = await api('adminSaveJob', params);
+      if (r.ok) { closeModal('modal-job'); loadSetup(); } else flash('保存に失敗しました。', false);
+    }
+
+    // ユーティリティ
+    function openModal(id){ document.getElementById(id).classList.add('show'); }
+    function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+    function flash(text, ok, keep){
+      const m = document.getElementById('msg');
+      m.innerHTML = '<div class="msg ' + (ok?'msg-ok':'msg-err') + '">' + text + '</div>';
+      window.scrollTo(0,0);
+      if (ok && !keep) setTimeout(()=>{ m.innerHTML=''; }, 3000);
+    }
+    function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+    loadRecruit();
+  </script>
+</body>
+</html>

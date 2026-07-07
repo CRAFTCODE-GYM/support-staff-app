@@ -1,0 +1,183 @@
+/* =========================================================
+   サポートスタッフ募集システム — スタイル
+   方針: スポーツ連盟の現場ツール。落ち着いた藍(indigo)を基調に、
+        確定を示す一点だけ温かみのある橙(amber)。スマホ前提で
+        タップ領域を大きく、視認性最優先。
+   ========================================================= */
+:root {
+  --ink:        #1b2230;   /* 文字 */
+  --ink-soft:   #5b6577;   /* 補助文字 */
+  --line:       #e3e7ee;   /* 罫線 */
+  --bg:         #f6f7f9;   /* 背景 */
+  --card:       #ffffff;
+  --indigo:     #2f3e8f;   /* 主色 */
+  --indigo-d:   #243072;
+  --indigo-bg:  #eef1fb;
+  --amber:      #c9742a;   /* 確定アクセント */
+  --amber-bg:   #fbf1e5;
+  --green:      #2f7d51;
+  --green-bg:   #e8f4ec;
+  --gray-bg:    #eef0f3;
+  --danger:     #b4322a;
+  --radius:     12px;
+  --shadow:     0 1px 2px rgba(27,34,48,.04), 0 4px 14px rgba(27,34,48,.05);
+  --font: "Hiragino Kaku Gothic ProN", "Hiragino Sans", "Noto Sans JP", "Yu Gothic", Meiryo, system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--indigo); }
+
+/* ---- ヘッダー ---- */
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 760px; margin: 0 auto; padding: 14px 18px;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+}
+.brand { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.brand .mark {
+  width: 10px; height: 22px; border-radius: 3px;
+  background: linear-gradient(180deg, var(--indigo), var(--amber));
+  flex: none; transform: translateY(3px);
+}
+.brand h1 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .02em; white-space: nowrap; }
+.brand .sub { font-size: 12px; color: var(--ink-soft); }
+.who { font-size: 13px; color: var(--ink-soft); display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.who b { color: var(--ink); font-weight: 600; }
+.linklike { background: none; border: none; color: var(--indigo); font: inherit; cursor: pointer; padding: 0; font-size: 13px; }
+.linklike:hover { text-decoration: underline; }
+
+/* ---- レイアウト ---- */
+.wrap { max-width: 760px; margin: 0 auto; padding: 18px; }
+.wrap-narrow { max-width: 440px; margin: 0 auto; padding: 18px; }
+
+/* ---- タブ ---- */
+.tabs {
+  display: flex; gap: 6px; margin: 4px 0 20px;
+  position: sticky; top: 0; z-index: 15;
+  background: var(--bg); padding: 8px 0;
+}
+.tab {
+  flex: 1; text-align: center; padding: 12px 8px; border-radius: 12px;
+  background: #fff; border: 1px solid var(--line); color: var(--ink-soft);
+  font-weight: 700; font-size: 15px; cursor: pointer; text-decoration: none;
+  min-height: 44px; font-family: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+.tab.active { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.tab .tab-badge {
+  display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px;
+  border-radius: 999px; background: var(--amber); color: #fff; font-size: 11px; line-height: 18px;
+}
+
+/* ---- 大会ブロック ---- */
+.event { margin-bottom: 26px; }
+.event-head { display: flex; align-items: baseline; gap: 10px; margin: 0 4px 10px; }
+.event-head h2 { font-size: 17px; margin: 0; font-weight: 700; }
+.event-head .venue { font-size: 13px; color: var(--ink-soft); }
+
+/* ---- 仕事カード ---- */
+.job {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 14px 16px; margin-bottom: 10px;
+  display: flex; align-items: center; gap: 14px;
+}
+.job-main { flex: 1; min-width: 0; }
+.job-date { font-weight: 700; font-size: 15px; }
+.job-date .time { font-weight: 500; color: var(--ink-soft); margin-left: 8px; font-size: 14px; }
+.job-title { font-size: 15px; margin-top: 2px; }
+.job-meta { font-size: 13px; color: var(--ink-soft); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.fee { font-weight: 700; color: var(--ink); }
+.chip { font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--indigo-bg); color: var(--indigo-d); }
+.chip-count { background: var(--amber-bg); color: var(--amber); font-weight: 700; }
+.chip-zero { background: var(--gray-bg); color: var(--ink-soft); }
+
+/* ---- 状態ボタン/ラベル ---- */
+.action { flex: none; min-width: 96px; text-align: center; }
+.btn {
+  display: inline-block; width: 100%; padding: 12px 14px; border-radius: 12px;
+  font-weight: 700; font-size: 15px; cursor: pointer; border: 1px solid transparent;
+  font-family: inherit; min-height: 44px; /* 親指で押しやすい高さ */
+  -webkit-tap-highlight-color: transparent; transition: transform .05s;
+}
+.btn:active { transform: scale(.97); }
+.btn-apply { background: var(--indigo); color: #fff; }
+.btn-apply:hover { background: var(--indigo-d); }
+.btn-ghost { background: #fff; color: var(--indigo); border-color: var(--indigo); }
+.btn-receive { background: var(--green); color: #fff; }
+.btn-receive:hover { background: #266a43; }
+.btn:disabled { opacity: .55; cursor: default; }
+.state-label { display: inline-block; width: 100%; padding: 11px 8px; border-radius: 12px; font-weight: 700; font-size: 14px; box-sizing: border-box; }
+.state-applied  { background: var(--gray-bg); color: var(--ink-soft); }
+.state-assigned { background: var(--amber-bg); color: var(--amber); }
+.state-rejected { background: #f4eaea; color: var(--danger); }
+.state-received { background: var(--green-bg); color: var(--green); }
+.receipt-link { display: inline-block; margin-top: 6px; font-size: 13px; color: var(--indigo); }
+
+/* ---- フォーム ---- */
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px; }
+.card h2 { margin: 0 0 4px; font-size: 18px; }
+.card .lead { color: var(--ink-soft); font-size: 14px; margin: 0 0 18px; }
+label.field { display: block; margin-bottom: 14px; }
+label.field > span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 5px; color: var(--ink); }
+input, select, textarea {
+  width: 100%; padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px;
+  font: inherit; color: var(--ink); background: #fff;
+}
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--indigo-bg); border-color: var(--indigo); }
+.btn-block { width: 100%; padding: 13px; font-size: 15px; }
+.btn-primary { background: var(--indigo); color: #fff; border: none; border-radius: 10px; font-weight: 700; cursor: pointer; }
+.btn-primary:hover { background: var(--indigo-d); }
+.row { display: flex; gap: 10px; }
+.row > * { flex: 1; }
+
+/* ---- 状態表示 ---- */
+.note { font-size: 13px; color: var(--ink-soft); }
+.empty { text-align: center; color: var(--ink-soft); padding: 50px 20px; font-size: 14px; }
+.msg { padding: 12px 14px; border-radius: 9px; font-size: 14px; margin-bottom: 14px; }
+.msg-ok { background: var(--green-bg); color: var(--green); }
+.msg-err { background: #f4eaea; color: var(--danger); }
+.spinner { text-align: center; color: var(--ink-soft); padding: 40px; }
+
+/* ---- 管理: テーブル/応募リスト ---- */
+.section-title { font-size: 15px; font-weight: 700; margin: 26px 4px 10px; display: flex; align-items: center; gap: 8px; }
+.applicant {
+  display: flex; align-items: center; gap: 12px; padding: 10px 14px;
+  border: 1px solid var(--line); border-radius: 10px; background: #fff; margin-bottom: 8px;
+}
+.applicant .name { font-weight: 600; }
+.applicant .addr { font-size: 12px; color: var(--ink-soft); }
+.applicant .acts { margin-left: auto; display: flex; gap: 6px; }
+.mini { padding: 7px 12px; font-size: 13px; border-radius: 8px; font-weight: 600; cursor: pointer; border: 1px solid var(--line); background: #fff; font-family: inherit; }
+.mini-approve { background: var(--amber); color: #fff; border-color: var(--amber); }
+.mini-reject { color: var(--danger); border-color: #e6cfcf; }
+.mini-pdf { color: var(--indigo); border-color: var(--indigo); }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+.badge-assigned { background: var(--amber-bg); color: var(--amber); }
+.badge-applied { background: var(--gray-bg); color: var(--ink-soft); }
+.badge-paid { background: var(--indigo-bg); color: var(--indigo-d); }
+.badge-received { background: var(--green-bg); color: var(--green); }
+
+/* ---- モーダル ---- */
+.modal-bg { position: fixed; inset: 0; background: rgba(27,34,48,.45); display: none; align-items: center; justify-content: center; z-index: 50; padding: 16px; }
+.modal-bg.show { display: flex; }
+.modal { background: #fff; border-radius: 14px; width: 100%; max-width: 460px; padding: 22px; max-height: 90vh; overflow: auto; }
+.modal h3 { margin: 0 0 16px; font-size: 17px; }
+
+@media (max-width: 560px) {
+  .job { flex-direction: column; align-items: stretch; gap: 10px; }
+  .action { min-width: 0; }
+  .brand .sub { display: none; }
+  .topbar-inner { flex-wrap: wrap; padding: 11px 14px; gap: 6px 12px; }
+  .brand h1 { font-size: 15px; }
+  .who { font-size: 12px; gap: 10px; width: 100%; justify-content: flex-end; }
+}
