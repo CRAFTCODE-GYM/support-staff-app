@@ -18,22 +18,24 @@
   <main class="wrap-narrow" style="padding-top:40px;">
     <div class="card">
       <h2>ログイン</h2>
-      <p class="lead">メールアドレスを入力してください。ログイン用のリンクをメールでお送りします。</p>
+      <p class="lead">メールアドレスを入力してください。初めての方はこのページでそのまま登録できます。</p>
       <div id="msg"></div>
 
-      <div id="form-area">
+      <label class="field">
+        <span>メールアドレス</span>
+        <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+      </label>
+
+      <!-- 初回のみ表示: 氏名入力 -->
+      <div id="name-area" style="display:none;">
         <label class="field">
-          <span>メールアドレス</span>
-          <input type="email" id="email" placeholder="you@example.com" autocomplete="email">
+          <span>氏名（領収書に記載されます）</span>
+          <input id="name" placeholder="山田 太郎" autocomplete="name">
         </label>
-        <button class="btn-primary btn-block" id="send">ログインリンクを送る</button>
+        <p class="note" style="margin-top:-6px;">初めてのご利用のため、氏名の登録をお願いします。これで登録は完了します。</p>
       </div>
 
-      <div id="sent-area" style="display:none;">
-        <div class="msg msg-ok">メールを送信しました。届いたリンクを開いてログインしてください。</div>
-        <p class="note">メールが届かない場合は迷惑メールフォルダもご確認ください。リンクの有効期限は30分です。</p>
-        <button class="linklike" onclick="location.reload()">別のアドレスで送り直す</button>
-      </div>
+      <button class="btn-primary btn-block" id="go">はじめる</button>
     </div>
   </main>
 
@@ -43,28 +45,55 @@
     // 既にログイン済みならスキップ
     if (getSession().email) location.href = 'jobs.html';
 
-    const btn = document.getElementById('send');
+    const btn = document.getElementById('go');
     const msg = document.getElementById('msg');
+    let needName = false; // 未登録が判明したら true
+
+    function showMsg(text, ok) {
+      msg.innerHTML = text ? '<div class="msg ' + (ok ? 'msg-ok' : 'msg-err') + '">' + text + '</div>' : '';
+    }
+
+    function goNext(r) {
+      setSession(r.user.email, r.session, r.user);
+      location.href = r.user.isAdmin ? 'admin.html' : 'jobs.html';
+    }
+
     btn.addEventListener('click', async () => {
       const email = document.getElementById('email').value.trim();
-      msg.innerHTML = '';
+      showMsg('');
       if (!email || email.indexOf('@') < 0) {
-        msg.innerHTML = '<div class="msg msg-err">メールアドレスを正しく入力してください。</div>';
+        showMsg('メールアドレスを正しく入力してください。', false);
         return;
       }
-      btn.disabled = true; btn.textContent = '送信中…';
+      btn.disabled = true; btn.textContent = '確認中…';
       try {
-        const r = await api('requestLogin', { email });
-        if (r.ok) {
-          document.getElementById('form-area').style.display = 'none';
-          document.getElementById('sent-area').style.display = 'block';
+        if (!needName) {
+          // まずログインを試す
+          const r = await api('login', { email });
+          if (r.ok) { goNext(r); return; }
+          if (r.error === 'not_registered') {
+            // 初回: 氏名入力欄を出して登録に切り替え
+            needName = true;
+            document.getElementById('name-area').style.display = 'block';
+            btn.textContent = '登録してはじめる';
+            document.getElementById('name').focus();
+            showMsg('初めてのご利用ですね。氏名を入力してください。', true);
+            return;
+          }
+          showMsg('ログインに失敗しました（' + (r.error || '') + '）。', false);
         } else {
-          msg.innerHTML = '<div class="msg msg-err">送信に失敗しました（' + (r.error || '') + '）。</div>';
+          // 登録
+          const name = document.getElementById('name').value.trim();
+          if (!name) { showMsg('氏名を入力してください。', false); return; }
+          const r = await api('register', { email, name });
+          if (r.ok) { goNext(r); return; }
+          showMsg('登録に失敗しました（' + (r.error || '') + '）。', false);
         }
       } catch (e) {
-        msg.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
+        showMsg('通信エラーが発生しました。', false);
       } finally {
-        btn.disabled = false; btn.textContent = 'ログインリンクを送る';
+        btn.disabled = false;
+        if (btn.textContent.indexOf('中') >= 0) btn.textContent = needName ? '登録してはじめる' : 'はじめる';
       }
     });
     document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
