@@ -148,6 +148,46 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--indigo-bg);
 .msg-err { background: #f4eaea; color: var(--danger); }
 .spinner { text-align: center; color: var(--ink-soft); padding: 40px; }
 
+/* ---- 曜日の色分け(土=青/日=赤) ---- */
+.dow-sat { color: #2a5db0; }
+.dow-sun { color: #b4322a; }
+
+/* ---- 次の予定ハイライト / 終了した仕事 ---- */
+.job-next { border: 2px solid var(--indigo); }
+.next-chip {
+  display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 8px;
+  border-radius: 999px; background: var(--indigo); color: #fff; margin-right: 6px;
+  vertical-align: 2px;
+}
+.job-past { opacity: .62; }
+.divider {
+  display: flex; align-items: center; gap: 10px; color: var(--ink-soft);
+  font-size: 12px; font-weight: 600; margin: 22px 4px 10px;
+}
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+/* ---- 管理: サマリーとフィルタ ---- */
+.summary {
+  display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.sum-card {
+  flex: 1; min-width: 100px; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 10px 14px; text-align: center;
+}
+.sum-card .num { font-size: 22px; font-weight: 700; line-height: 1.2; }
+.sum-card .lbl { font-size: 11px; color: var(--ink-soft); font-weight: 600; }
+.sum-card.warn .num { color: var(--amber); }
+.sum-card.info .num { color: var(--indigo); }
+.sum-card.done .num { color: var(--green); }
+.filter-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.filter-chip {
+  padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+  font-size: 13px; font-weight: 600; color: var(--ink-soft); cursor: pointer; font-family: inherit;
+  min-height: 40px; -webkit-tap-highlight-color: transparent;
+}
+.filter-chip.active { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.applicant.pending { border-left: 4px solid var(--amber); padding-left: 11px; }
+
 /* ---- 管理: テーブル/応募リスト ---- */
 .section-title { font-size: 15px; font-weight: 700; margin: 26px 4px 10px; display: flex; align-items: center; gap: 8px; }
 .applicant {
@@ -180,4 +220,9 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--indigo-bg);
   .topbar-inner { flex-wrap: wrap; padding: 11px 14px; gap: 6px 12px; }
   .brand h1 { font-size: 15px; }
   .who { font-size: 12px; gap: 10px; width: 100%; justify-content: flex-end; }
+  /* 会場でのスマホ操作を想定: 管理ボタンを大きく、応募者行は縦積みに */
+  .mini { padding: 11px 16px; font-size: 14px; min-height: 44px; }
+  .applicant { flex-direction: column; align-items: stretch; gap: 8px; }
+  .applicant .acts { margin-left: 0; }
+  .applicant .acts .mini { flex: 1; }
 }
