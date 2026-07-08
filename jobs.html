@@ -23,7 +23,7 @@
   <main class="wrap">
     <nav class="tabs">
       <button class="tab active" id="tab-open" onclick="switchTab('open')">募集中</button>
-      <button class="tab" id="tab-mine" onclick="switchTab('mine')">参加予定</button>
+      <button class="tab" id="tab-mine" onclick="switchTab('mine')">参加予定<span id="mine-badge"></span></button>
     </nav>
     <div id="msg"></div>
     <div id="list"><div class="spinner">読み込み中…</div></div>
@@ -49,10 +49,22 @@
       try {
         const r = await api(currentTab === 'open' ? 'listJobs' : 'listMyJobs');
         if (!r.ok) { list.innerHTML = '<div class="msg msg-err">読み込みに失敗しました。</div>'; return; }
+        // 各大会内を日付順にソート
+        (r.events || []).forEach(ev => ev.jobs.sort((a, b) => dateVal(a.work_date) - dateVal(b.work_date)));
+        if (r.my_assigned_count !== undefined) setBadge(r.my_assigned_count);
+        if (currentTab === 'mine') {
+          const total = (r.events || []).reduce((n, ev) => n + ev.jobs.length, 0);
+          setBadge(total);
+        }
         render(r.events);
       } catch (e) {
         list.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
       }
+    }
+
+    function setBadge(n) {
+      document.getElementById('mine-badge').innerHTML =
+        n > 0 ? '<span class="tab-badge">' + n + '</span>' : '';
     }
 
     function render(events) {
@@ -63,6 +75,34 @@
           : '<div class="empty">参加予定の仕事はまだありません。<br>「募集中」タブから気になる仕事に応募してみてください。</div>';
         return;
       }
+
+      if (currentTab === 'mine') {
+        // 全仕事を日付順の1本のリストにし、これから/終了で分ける
+        const all = [];
+        events.forEach(ev => ev.jobs.forEach(j => { j._ev = ev; all.push(j); }));
+        all.sort((a, b) => dateVal(a.work_date) - dateVal(b.work_date));
+        const t0 = todayStart();
+        const future = all.filter(j => dateVal(j.work_date) >= t0);
+        const past = all.filter(j => dateVal(j.work_date) < t0);
+
+        let html = '';
+        future.forEach((j, i) => {
+          html += '<div style="margin:0 4px 4px;font-size:13px;color:var(--ink-soft);">' +
+                  esc(j._ev.event_name) + (j._ev.venue ? ' @' + esc(j._ev.venue) : '') + '</div>' +
+                  jobCard(j, i === 0); // 直近の1件を「次の予定」として強調
+        });
+        if (past.length) {
+          html += '<div class="divider">終了した仕事</div>';
+          past.reverse().forEach(j => { // 新しい順
+            html += '<div style="margin:0 4px 4px;font-size:13px;color:var(--ink-soft);">' +
+                    esc(j._ev.event_name) + (j._ev.venue ? ' @' + esc(j._ev.venue) : '') + '</div>' +
+                    jobCard(j, false, true);
+          });
+        }
+        list.innerHTML = html || '<div class="empty">参加予定の仕事はまだありません。</div>';
+        return;
+      }
+
       let html = '';
       events.forEach(ev => {
         if (!ev.jobs.length) return;
@@ -74,7 +114,7 @@
       list.innerHTML = html;
     }
 
-    function jobCard(j) {
+    function jobCard(j, isNext, isPast) {
       const meta = [];
       meta.push('<span class="fee">' + yen(j.fee) + '</span>');
       if (j.transport_included) meta.push('<span class="chip">交通費込み</span>');
@@ -106,8 +146,11 @@
         action = '<button class="btn btn-apply" onclick="apply(\'' + j.job_id + '\')">参加する</button>';
       }
 
-      return '<div class="job"><div class="job-main">' +
-        '<div class="job-date">' + esc(jpDate(j.work_date)) + (j.time_text ? '<span class="time">' + esc(j.time_text) + '</span>' : '') + '</div>' +
+      const cls = 'job' + (isNext ? ' job-next' : '') + (isPast ? ' job-past' : '');
+      return '<div class="' + cls + '"><div class="job-main">' +
+        '<div class="job-date">' + (isNext ? '<span class="next-chip">次の予定</span>' : '') +
+        '<span class="' + dowClass(j.work_date) + '">' + esc(jpDate(j.work_date)) + '</span>' +
+        (j.time_text ? '<span class="time">' + esc(j.time_text) + '</span>' : '') + '</div>' +
         '<div class="job-title">' + esc(j.title) + '</div>' +
         '<div class="job-meta">' + meta.join('') + '</div>' +
         '</div><div class="action">' + action + '</div></div>';
