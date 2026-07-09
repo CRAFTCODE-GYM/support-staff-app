@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>サポートスタッフ募集</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2f3e8f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CCスタッフ">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 </head>
 <body>
   <header class="topbar">
@@ -35,30 +42,35 @@
     if (!requireLogin()) {}
     document.getElementById('uname').textContent = currentUser().name || currentUser().email || '―';
     let currentTab = 'open';
+    const CACHE = { open: null, mine: null }; // タブごとに取得結果を保持
 
     function switchTab(t) {
       currentTab = t;
       document.getElementById('tab-open').classList.toggle('active', t === 'open');
       document.getElementById('tab-mine').classList.toggle('active', t === 'mine');
-      load();
+      if (CACHE[t]) { applyData(CACHE[t]); } else { load(); } // キャッシュ即描画/なければ取得
     }
 
-    async function load() {
+    function applyData(r) {
+      (r.events || []).forEach(ev => ev.jobs.sort((a, b) => dateVal(a.work_date) - dateVal(b.work_date)));
+      if (r.my_assigned_count !== undefined) setBadge(r.my_assigned_count);
+      if (currentTab === 'mine') {
+        const total = (r.events || []).reduce((n, ev) => n + ev.jobs.length, 0);
+        setBadge(total);
+      }
+      render(r.events);
+    }
+
+    async function load(silent) {
       const list = document.getElementById('list');
-      list.innerHTML = '<div class="spinner">読み込み中…</div>';
+      if (!silent) list.innerHTML = '<div class="spinner">読み込み中…</div>';
       try {
         const r = await api(currentTab === 'open' ? 'listJobs' : 'listMyJobs');
-        if (!r.ok) { list.innerHTML = '<div class="msg msg-err">読み込みに失敗しました。</div>'; return; }
-        // 各大会内を日付順にソート
-        (r.events || []).forEach(ev => ev.jobs.sort((a, b) => dateVal(a.work_date) - dateVal(b.work_date)));
-        if (r.my_assigned_count !== undefined) setBadge(r.my_assigned_count);
-        if (currentTab === 'mine') {
-          const total = (r.events || []).reduce((n, ev) => n + ev.jobs.length, 0);
-          setBadge(total);
-        }
-        render(r.events);
+        if (!r.ok) { if (!silent) list.innerHTML = '<div class="msg msg-err">読み込みに失敗しました。</div>'; return; }
+        CACHE[currentTab] = r; // キャッシュ更新
+        applyData(r);
       } catch (e) {
-        list.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
+        if (!silent) list.innerHTML = '<div class="msg msg-err">通信エラーが発生しました。</div>';
       }
     }
 
@@ -156,7 +168,7 @@
         '</div><div class="action">' + action + '</div></div>';
     }
 
-    // 謝礼の受領確認 → 領収書自動発行
+    // 謝礼の受領確認 → 領収書自動発行(PDF生成は時間がかかるので完了を待つ)
     async function receive(appId) {
       if (!confirm('謝礼を受け取りましたか？\n領収書が自動発行されます。')) return;
       flash('領収書を発行しています…', true);
@@ -164,7 +176,7 @@
         const r = await api('confirmReceipt', { app_id: appId });
         if (r.ok) {
           flash('受領を記録しました。領収書が発行されました。', true);
-          load();
+          CACHE.mine = null; load(); // 最新状態(受領済み+領収書リンク)を取得
         } else if (r.error === 'profile_incomplete') {
           flash('先にプロフィールで氏名を登録してください。', false);
           setTimeout(() => location.href = 'profile.html', 1500);
@@ -176,20 +188,42 @@
       } catch (e) { flash('通信エラーが発生しました。', false); }
     }
 
+    // 募集中キャッシュ内の該当ジョブを探す
+    function findOpenJob(jobId) {
+      const c = CACHE.open; if (!c) return null;
+      for (const ev of c.events) { const j = ev.jobs.find(x => x.job_id === jobId); if (j) return j; }
+      return null;
+    }
+    function invalidateMine() { CACHE.mine = null; } // 参加予定は変わるので次回再取得
+
     async function apply(jobId) {
       flash('');
+      const j = findOpenJob(jobId);
+      const before = j ? j.state : null;
+      if (j) { j.state = 'applied'; applyData(CACHE.open); } // 楽観的に「承認待ち」へ
+      invalidateMine();
       try {
         const r = await api('apply', { job_id: jobId });
-        if (r.ok) { flash('応募しました。管理者の承認をお待ちください。', true); load(); }
-        else flash('応募に失敗しました。', false);
-      } catch (e) { flash('通信エラーが発生しました。', false); }
+        if (r.ok) { flash('応募しました。管理者の承認をお待ちください。', true); }
+        else { if (j) { j.state = before; applyData(CACHE.open); } flash('応募に失敗しました。', false); }
+      } catch (e) {
+        if (j) { j.state = before; applyData(CACHE.open); }
+        flash('通信エラーが発生しました。', false);
+      }
     }
     async function cancel(jobId) {
       if (!confirm('この応募を取り消しますか？')) return;
+      const j = findOpenJob(jobId);
+      const before = j ? j.state : null;
+      if (j) { j.state = 'open'; applyData(CACHE.open); } // 楽観的に「参加する」へ戻す
+      invalidateMine();
       try {
         const r = await api('cancelApply', { job_id: jobId });
-        if (r.ok) load(); else flash('取消できませんでした。', false);
-      } catch (e) { flash('通信エラーが発生しました。', false); }
+        if (!r.ok) { if (j) { j.state = before; applyData(CACHE.open); } flash('取消できませんでした。', false); }
+      } catch (e) {
+        if (j) { j.state = before; applyData(CACHE.open); }
+        flash('通信エラーが発生しました。', false);
+      }
     }
     function flash(text, ok) {
       const m = document.getElementById('msg');
@@ -199,6 +233,14 @@
     function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
     load();
+  </script>
+  <script>
+    // PWA: Service Worker 登録
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
