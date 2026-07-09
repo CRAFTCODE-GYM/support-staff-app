@@ -5,6 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>管理ダッシュボード</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2f3e8f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="CCスタッフ">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 </head>
 <body>
   <header class="topbar">
@@ -109,19 +116,25 @@
     document.getElementById('uname').textContent = currentUser().name || currentUser().email;
 
     let DATA = { events: [], jobs: [], applications: [] };
+    let LOADED = false; // 一度読んだらキャッシュ。タブ切替では再取得しない
 
     function switchTab(t) {
       document.getElementById('tab-recruit').classList.toggle('active', t === 'recruit');
       document.getElementById('tab-setup').classList.toggle('active', t === 'setup');
       document.getElementById('view-recruit').style.display = t === 'recruit' ? 'block' : 'none';
       document.getElementById('view-setup').style.display = t === 'setup' ? 'block' : 'none';
-      if (t === 'recruit') loadRecruit(); else loadSetup();
+      // キャッシュ済みなら再取得せず即描画。未取得のときだけ通信。
+      if (t === 'recruit') { if (LOADED) { renderSummary(); renderRecruit(); } else loadRecruit(); }
+      else { if (LOADED) renderSetup(); else loadSetup(); }
     }
 
-    async function loadAll() {
-      const [ev, ap] = await Promise.all([api('adminListEvents'), api('adminListApplications')]);
-      if (ev.ok) { DATA.events = ev.events; DATA.jobs = ev.jobs; }
-      if (ap.ok) { DATA.applications = ap.applications; }
+    async function loadAll(force) {
+      if (LOADED && !force) return; // キャッシュ利用
+      const r = await api('adminDashboard');
+      if (r.ok) {
+        DATA.events = r.events; DATA.jobs = r.jobs; DATA.applications = r.applications;
+        LOADED = true;
+      }
     }
 
     let FILTER = 'all'; // all | pending
@@ -243,26 +256,52 @@
     }
 
     // 住所を管理者が設定(LINE等で本人確認のうえ入力)
+    // ローカルDATAを即時反映→再描画。通信は裏で。失敗時はロールバック用に前状態を返す。
+    function findApp(appId) { return DATA.applications.find(a => a.app_id === appId); }
+    function rerenderRecruit() { renderSummary(); renderRecruit(); }
+
     async function setAddress(email, current) {
       const address = prompt(email + ' さんの住所を入力してください（領収書に記載されます）', current || '');
       if (address === null) return; // キャンセル
-      const r = await api('adminSetUserAddress', { target_email: email, address: address.trim() });
-      if (r.ok) loadRecruit(); else flash('住所の保存に失敗しました。', false);
+      const addr = address.trim();
+      // 楽観的更新: 同じメールの全応募の住所を即書き換え
+      const before = DATA.applications.map(a => a.user_address);
+      DATA.applications.forEach(a => { if (String(a.user_email).toLowerCase() === email.toLowerCase()) a.user_address = addr; });
+      rerenderRecruit();
+      const r = await api('adminSetUserAddress', { target_email: email, address: addr });
+      if (!r.ok) {
+        DATA.applications.forEach((a, i) => a.user_address = before[i]); // ロールバック
+        rerenderRecruit();
+        flash('住所の保存に失敗しました。', false);
+      }
     }
     function escAttr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
     // 支払済みの記録/取消。スタッフ側に「謝礼を受け取りました」ボタンが出る
     async function markPaid(appId, paid) {
       if (paid && !confirm('現金を渡しましたか？\n支払済みにすると、スタッフ側に受領確認ボタンが表示されます。')) return;
+      const a = findApp(appId); if (!a) return;
+      const before = a.pay_state;
+      a.pay_state = paid ? 'paid' : 'none'; // 楽観的更新
+      rerenderRecruit();
       const r = await api('adminMarkPaid', { app_id: appId, paid: paid });
-      if (r.ok) loadRecruit();
-      else if (r.error === 'already_received') flash('受領確認済みのため取消できません。', false);
-      else flash('処理に失敗しました。', false);
+      if (!r.ok) {
+        a.pay_state = before; rerenderRecruit();
+        flash(r.error === 'already_received' ? '受領確認済みのため取消できません。' : '処理に失敗しました。', false);
+      }
     }
 
     async function decide(appId, decision) {
+      const a = findApp(appId); if (!a) return;
+      const before = a.status, beforePay = a.pay_state;
+      a.status = decision;                       // 楽観的更新
+      if (decision !== 'assigned') a.pay_state = 'none';
+      rerenderRecruit();
       const r = await api('adminDecide', { app_id: appId, decision });
-      if (r.ok) loadRecruit(); else flash('処理に失敗しました。', false);
+      if (!r.ok) {
+        a.status = before; a.pay_state = beforePay; rerenderRecruit();
+        flash('処理に失敗しました。', false);
+      }
     }
 
     // ===== 領収書 =====
@@ -325,7 +364,13 @@
       const box = document.getElementById('setup-list');
       box.innerHTML = '<div class="spinner">読み込み中…</div>';
       await loadAll();
+      renderSetup();
+    }
+
+    function renderSetup() {
+      const box = document.getElementById('setup-list');
       const jobsByEvent = {}; DATA.jobs.forEach(j => { (jobsByEvent[j.event_id] = jobsByEvent[j.event_id] || []).push(j); });
+      Object.keys(jobsByEvent).forEach(k => jobsByEvent[k].sort((a, b) => dateVal(a.work_date) - dateVal(b.work_date)));
       if (!DATA.events.length) { box.innerHTML = '<div class="empty">まだ大会がありません。上のボタンから追加してください。</div>'; return; }
       let html = '';
       DATA.events.forEach(ev => {
@@ -357,7 +402,7 @@
     async function saveEvent() {
       const params = { event_id: document.getElementById('ev-id').value, name: document.getElementById('ev-name').value, venue: document.getElementById('ev-venue').value };
       const r = await api('adminSaveEvent', params);
-      if (r.ok) { closeModal('modal-event'); loadSetup(); } else flash('保存に失敗しました。', false);
+      if (r.ok) { closeModal('modal-event'); await loadAll(true); renderSetup(); } else flash('保存に失敗しました。', false);
     }
 
     // 仕事モーダル
@@ -394,7 +439,7 @@
         status: document.getElementById('job-status').value,
       };
       const r = await api('adminSaveJob', params);
-      if (r.ok) { closeModal('modal-job'); loadSetup(); } else flash('保存に失敗しました。', false);
+      if (r.ok) { closeModal('modal-job'); await loadAll(true); renderSetup(); } else flash('保存に失敗しました。', false);
     }
 
     // ユーティリティ
@@ -409,6 +454,14 @@
     function esc(s){return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
     loadRecruit();
+  </script>
+  <script>
+    // PWA: Service Worker 登録
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').catch(() => {});
+      });
+    }
   </script>
 </body>
 </html>
