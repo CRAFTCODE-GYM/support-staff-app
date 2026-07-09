@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>管理者ログイン｜CCスタッフ</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#2f3e8f">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="mark"></span>
+        <div><h1>管理者ログイン</h1><div class="sub">サポートスタッフ募集</div></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap-narrow" style="padding-top:40px;">
+    <div class="card">
+      <h2>管理者ログイン</h2>
+      <p class="lead">管理者用のメールアドレスを入力してください。</p>
+      <div id="msg"></div>
+      <label class="field">
+        <span>メールアドレス</span>
+        <input type="email" id="email" placeholder="admin@example.com" autocomplete="email">
+      </label>
+      <button class="btn-primary btn-block" id="go">ログイン</button>
+    </div>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+  <script>
+    // 既に管理者としてログイン済みならダッシュボードへ
+    if (getSession().email && currentUser().isAdmin) location.href = 'admin.html';
+
+    const btn = document.getElementById('go');
+    const msg = document.getElementById('msg');
+    function showMsg(t, ok) { msg.innerHTML = t ? '<div class="msg ' + (ok?'msg-ok':'msg-err') + '">' + t + '</div>' : ''; }
+
+    btn.addEventListener('click', async () => {
+      const email = document.getElementById('email').value.trim();
+      showMsg('');
+      if (!email || email.indexOf('@') < 0) { showMsg('メールアドレスを正しく入力してください。', false); return; }
+      btn.disabled = true; btn.textContent = '確認中…';
+      try {
+        const r = await api('login', { email });
+        if (r.ok) {
+          if (!r.user.isAdmin) {
+            showMsg('このアカウントには管理者権限がありません。', false);
+            return;
+          }
+          setSession(r.user.email, r.session, r.user);
+          location.href = 'admin.html';
+        } else if (r.error === 'not_registered') {
+          showMsg('このメールアドレスは登録されていません。管理者として登録されているか確認してください。', false);
+        } else {
+          showMsg('ログインに失敗しました（' + (r.error || '') + '）。', false);
+        }
+      } catch (e) {
+        showMsg('通信エラーが発生しました。時間をおいて再度お試しください。', false);
+      } finally {
+        btn.disabled = false; btn.textContent = 'ログイン';
+      }
+    });
+    document.getElementById('email').addEventListener('keydown', e => { if (e.key === 'Enter') btn.click(); });
+  </script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => {}); });
+    }
+  </script>
+</body>
+</html>
