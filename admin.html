@@ -111,8 +111,8 @@
   <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
-    if (!requireLogin()) {}
-    if (!currentUser().isAdmin) { location.href = 'jobs.html'; }
+    // 未ログイン or 管理者でない場合は管理者ログインへ(スタッフ画面には送らない)
+    if (!getSession().email || !currentUser().isAdmin) { location.href = 'admin-login.html'; }
     document.getElementById('uname').textContent = currentUser().name || currentUser().email;
 
     let DATA = { events: [], jobs: [], applications: [] };
@@ -129,12 +129,23 @@
     }
 
     async function loadAll(force) {
-      if (LOADED && !force) return; // キャッシュ利用
-      const r = await api('adminDashboard');
-      if (r.ok) {
-        DATA.events = r.events; DATA.jobs = r.jobs; DATA.applications = r.applications;
-        LOADED = true;
+      if (LOADED && !force) return true; // キャッシュ利用
+      try {
+        const r = await api('adminDashboard');
+        if (r.ok) {
+          DATA.events = r.events; DATA.jobs = r.jobs; DATA.applications = r.applications;
+          LOADED = true;
+          return true;
+        }
+        return false;
+      } catch (e) {
+        return false;
       }
+    }
+
+    function adminErrBox(retryFn) {
+      return '<div class="msg msg-err">通信が不安定なようです。もう一度お試しください。</div>' +
+        '<button class="btn-primary" style="padding:11px 20px;border-radius:9px;" onclick="' + retryFn + '">再読み込み</button>';
     }
 
     let FILTER = 'all'; // all | pending
@@ -150,7 +161,8 @@
     async function loadRecruit() {
       const box = document.getElementById('recruit-list');
       box.innerHTML = '<div class="spinner">読み込み中…</div>';
-      await loadAll();
+      const ok = await loadAll();
+      if (!ok) { box.innerHTML = adminErrBox('loadRecruit()'); return; }
       renderSummary();
       renderRecruit();
     }
@@ -363,7 +375,8 @@
     async function loadSetup() {
       const box = document.getElementById('setup-list');
       box.innerHTML = '<div class="spinner">読み込み中…</div>';
-      await loadAll();
+      const ok = await loadAll();
+      if (!ok) { box.innerHTML = adminErrBox('loadSetup()'); return; }
       renderSetup();
     }
 
