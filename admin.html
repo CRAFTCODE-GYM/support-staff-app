@@ -5,11 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>管理ダッシュボード</title>
   <link rel="stylesheet" href="styles.css">
-  <link rel="manifest" href="manifest.json">
-  <meta name="theme-color" content="#2f3e8f">
+  <link rel="manifest" href="manifest-admin.json">
+  <meta name="theme-color" content="#243072">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <meta name="apple-mobile-web-app-title" content="CCスタッフ">
+  <meta name="apple-mobile-web-app-title" content="CC管理">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 </head>
@@ -108,6 +108,18 @@
     </div>
   </div>
 
+  <!-- 汎用 確認モーダル(誤操作防止) -->
+  <div class="modal-bg" id="modal-confirm">
+    <div class="modal">
+      <h3 id="cf-title">確認</h3>
+      <p id="cf-msg" style="font-size:15px;line-height:1.7;margin:0 0 20px;"></p>
+      <div class="row">
+        <button class="btn-primary btn-block" id="cf-ok">実行する</button>
+        <button class="mini btn-block" onclick="closeModal('modal-confirm')">キャンセル</button>
+      </div>
+    </div>
+  </div>
+
   <script src="config.js"></script>
   <script src="app.js"></script>
   <script>
@@ -196,9 +208,17 @@
           jobs = jobs.filter(j => (appsByJob[j.job_id] || []).some(a => a.status === 'applied'));
           if (!jobs.length) return; // 承認待ちがない大会は非表示
         }
-        const assignedCount = (DATA.applications.filter(a => a.event_id === ev.event_id && a.status === 'assigned')).length;
+        const assignedApps = DATA.applications.filter(a => a.event_id === ev.event_id && a.status === 'assigned');
+        const assignedCount = assignedApps.length;
+        // 大会ごとの支払金額: 確定(依頼決定)者の謝礼合計と、うち受領済みの合計
+        const totalPay = assignedApps.reduce((s, a) => s + (Number(a.fee) || 0), 0);
+        const paidDone = assignedApps.filter(a => a.pay_state === 'received').reduce((s, a) => s + (Number(a.fee) || 0), 0);
         html += '<section class="event"><div class="event-head"><h2>' + esc(ev.name) + '</h2>' +
                 (ev.venue ? '<span class="venue">@' + esc(ev.venue) + '</span>' : '') + '</div>';
+        if (assignedCount > 0) {
+          html += '<div class="pay-total">支払合計 <b>' + yen(totalPay) + '</b>' +
+                  '<span class="pay-sub">（' + assignedCount + '名・受領済み ' + yen(paidDone) + '）</span></div>';
+        }
         if (FILTER === 'all' && assignedCount > 0) {
           html += '<button class="mini mini-pdf" style="margin:0 4px 10px;" onclick="bulkReceipts(\'' + ev.event_id + '\')">この大会の確定者全員の領収書を一括発行（' + assignedCount + '名）</button>';
         }
@@ -244,17 +264,17 @@
       let acts = '';
       if (a.status === 'applied') {
         acts = '<button class="mini mini-approve" onclick="decide(\'' + a.app_id + '\',\'assigned\')">承認</button>' +
-               '<button class="mini mini-reject" onclick="decide(\'' + a.app_id + '\',\'rejected\')">見送り</button>';
+               '<button class="mini mini-reject" onclick="askReject(\'' + a.app_id + '\')">見送り</button>';
       } else if (a.status === 'assigned') {
         if (a.pay_state === 'received') {
           acts = (a.receipt_url ? '<a class="mini mini-pdf" style="text-decoration:none;" href="' + a.receipt_url + '" target="_blank">領収書</a>' : '');
         } else if (a.pay_state === 'paid') {
-          acts = '<button class="mini" onclick="markPaid(\'' + a.app_id + '\', false)">支払取消</button>' +
-                 '<button class="mini mini-pdf" onclick="openReceipt(\'' + a.app_id + '\')">手動発行</button>';
+          acts = '<button class="mini" onclick="askUnpay(\'' + a.app_id + '\')">支払取消</button>' +
+                 '<button class="mini mini-pdf" onclick="askManualReceipt(\'' + a.app_id + '\')">手動発行</button>';
         } else {
-          acts = '<button class="mini mini-approve" onclick="markPaid(\'' + a.app_id + '\', true)">支払済みにする</button>' +
-                 '<button class="mini mini-pdf" onclick="openReceipt(\'' + a.app_id + '\')">手動発行</button>' +
-                 '<button class="mini" onclick="decide(\'' + a.app_id + '\',\'applied\')">取消</button>';
+          acts = '<button class="mini mini-approve" onclick="askPay(\'' + a.app_id + '\')">支払済みにする</button>' +
+                 '<button class="mini mini-pdf" onclick="askManualReceipt(\'' + a.app_id + '\')">手動発行</button>' +
+                 '<button class="mini" onclick="askUndoAssign(\'' + a.app_id + '\')">取消</button>';
         }
       } else {
         acts = '<button class="mini" onclick="decide(\'' + a.app_id + '\',\'applied\')">戻す</button>';
@@ -289,9 +309,42 @@
     }
     function escAttr(s){return String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;');}
 
+    // --- 誤操作防止: 危険な操作は確認モーダルを挟む ---
+    function nameOf(a) { return esc(a.user_name || a.user_email); }
+
+    function askPay(appId) {
+      const a = findApp(appId); if (!a) return;
+      confirmAction('支払済みにする',
+        '<b>' + nameOf(a) + '</b> さんに <b>' + yen(a.fee) + '</b> を支払いましたか？<br>支払済みにすると、本人の画面に受領確認ボタンが表示されます。',
+        () => markPaid(appId, true));
+    }
+    function askUnpay(appId) {
+      const a = findApp(appId); if (!a) return;
+      confirmAction('支払済みを取り消す',
+        '<b>' + nameOf(a) + '</b> さんの「支払済み」を取り消します。<br>本人の受領確認ボタンが消えます。よろしいですか？',
+        () => markPaid(appId, false), true);
+    }
+    function askUndoAssign(appId) {
+      const a = findApp(appId); if (!a) return;
+      confirmAction('依頼決定を取り消す',
+        '<b>' + nameOf(a) + '</b> さんの依頼決定を取り消し、「承認待ち」に戻します。よろしいですか？',
+        () => decide(appId, 'applied'), true);
+    }
+    function askReject(appId) {
+      const a = findApp(appId); if (!a) return;
+      confirmAction('見送りにする',
+        '<b>' + nameOf(a) + '</b> さんを今回は見送りにします。よろしいですか？',
+        () => decide(appId, 'rejected'), true);
+    }
+    function askManualReceipt(appId) {
+      const a = findApp(appId); if (!a) return;
+      confirmAction('領収書を手動発行',
+        '<b>' + nameOf(a) + '</b> さんの領収書を手動で発行します。<br>（通常はスタッフ本人が受領時に発行します。印刷して手書きサインをもらう場合に使います）',
+        () => openReceipt(appId));
+    }
+
     // 支払済みの記録/取消。スタッフ側に「謝礼を受け取りました」ボタンが出る
     async function markPaid(appId, paid) {
-      if (paid && !confirm('現金を渡しましたか？\n支払済みにすると、スタッフ側に受領確認ボタンが表示されます。')) return;
       const a = findApp(appId); if (!a) return;
       const before = a.pay_state;
       a.pay_state = paid ? 'paid' : 'none'; // 楽観的更新
@@ -458,6 +511,22 @@
     // ユーティリティ
     function openModal(id){ document.getElementById(id).classList.add('show'); }
     function closeModal(id){ document.getElementById(id).classList.remove('show'); }
+
+    // 誤操作防止の確認ダイアログ。onYesは「実行する」を押したときだけ呼ばれる。
+    // danger=true で実行ボタンを赤系にする。
+    function confirmAction(title, message, onYes, danger) {
+      document.getElementById('cf-title').textContent = title;
+      document.getElementById('cf-msg').innerHTML = message;
+      const ok = document.getElementById('cf-ok');
+      ok.className = danger ? 'btn-block mini-reject' : 'btn-primary btn-block';
+      ok.style.cssText = danger
+        ? 'background:#b4322a;color:#fff;border:none;border-radius:10px;font-weight:700;cursor:pointer;padding:13px;'
+        : '';
+      const fresh = ok.cloneNode(true); // 前回のリスナーを消す
+      ok.parentNode.replaceChild(fresh, ok);
+      fresh.addEventListener('click', () => { closeModal('modal-confirm'); onYes(); });
+      openModal('modal-confirm');
+    }
     function flash(text, ok, keep){
       const m = document.getElementById('msg');
       m.innerHTML = '<div class="msg ' + (ok?'msg-ok':'msg-err') + '">' + text + '</div>';
