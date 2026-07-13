@@ -190,9 +190,11 @@ input:focus, select:focus, textarea:focus { outline: 2px solid var(--indigo-bg);
 .pay-total {
   margin: 0 4px 10px; padding: 8px 14px; border-radius: 10px;
   background: var(--indigo-bg); color: var(--indigo-d); font-size: 14px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
 }
 .pay-total b { font-size: 17px; }
-.pay-total .pay-sub { color: var(--ink-soft); font-size: 12px; margin-left: 8px; }
+.pay-total .pay-sub { color: var(--ink-soft); font-size: 12px; }
+.pay-img-btn { margin-left: auto; background: #fff; }
 
 /* ---- 大会カレンダーへの直リンク ---- */
 .calendar-link {
