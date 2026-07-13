@@ -217,7 +217,8 @@
                 (ev.venue ? '<span class="venue">@' + esc(ev.venue) + '</span>' : '') + '</div>';
         if (assignedCount > 0) {
           html += '<div class="pay-total">支払合計 <b>' + yen(totalPay) + '</b>' +
-                  '<span class="pay-sub">（' + assignedCount + '名・受領済み ' + yen(paidDone) + '）</span></div>';
+                  '<span class="pay-sub">（' + assignedCount + '名・受領済み ' + yen(paidDone) + '）</span>' +
+                  '<button class="mini mini-pdf pay-img-btn" onclick="savePayImage(\'' + ev.event_id + '\')">📷 支払明細を画像で保存</button></div>';
         }
         if (FILTER === 'all' && assignedCount > 0) {
           html += '<button class="mini mini-pdf" style="margin:0 4px 10px;" onclick="bulkReceipts(\'' + ev.event_id + '\')">この大会の確定者全員の領収書を一括発行（' + assignedCount + '名）</button>';
@@ -410,6 +411,171 @@
       } finally {
         btn.disabled = false; btn.textContent = 'PDFを発行';
       }
+    }
+
+    /**
+     * 大会の支払明細を画像(PNG)として生成し保存する。
+     * 参加者・仕事内容・金額の内訳と合計を表にして描画。外部ライブラリ不使用。
+     */
+    function savePayImage(eventId) {
+      const ev = DATA.events.find(e => e.event_id === eventId);
+      if (!ev) return;
+      const jobsById = {}; DATA.jobs.forEach(j => jobsById[j.job_id] = j);
+      // 確定者のみ。日付順→氏名順で並べる
+      const rows = DATA.applications
+        .filter(a => a.event_id === eventId && a.status === 'assigned')
+        .map(a => {
+          const j = jobsById[a.job_id] || {};
+          return {
+            date: j.work_date || a.work_date || '',
+            title: a.title || j.title || '',
+            name: a.user_name || a.user_email || '',
+            fee: Number(a.fee) || 0,
+            received: a.pay_state === 'received',
+            paid: a.pay_state === 'paid' || a.pay_state === 'received'
+          };
+        })
+        .sort((x, y) => (dateVal(x.date) - dateVal(y.date)) || x.name.localeCompare(y.name, 'ja'));
+
+      if (!rows.length) { flash('確定者がいません。', false); return; }
+
+      const total = rows.reduce((s, r) => s + r.fee, 0);
+      const receivedTotal = rows.filter(r => r.received).reduce((s, r) => s + r.fee, 0);
+
+      // --- レイアウト定義(高解像度で描画してから縮小表示) ---
+      const S = 2;                       // 解像度倍率(Retina/印刷向け)
+      const W = 720;                     // 論理幅
+      const padX = 28;
+      const headerH = 96;                // タイトル+会場
+      const colHeadH = 34;
+      const rowH = 40;
+      const totalH = 66;
+      const footH = 34;
+      const H = headerH + colHeadH + rowH * rows.length + totalH + footH + 24;
+
+      const cv = document.createElement('canvas');
+      cv.width = W * S; cv.height = H * S;
+      const g = cv.getContext('2d');
+      g.scale(S, S);
+      const FONT = '"Hiragino Kaku Gothic ProN","Hiragino Sans","Noto Sans JP","Yu Gothic",Meiryo,sans-serif';
+
+      // 背景
+      g.fillStyle = '#ffffff'; g.fillRect(0, 0, W, H);
+
+      // ヘッダー
+      let y = 34;
+      g.fillStyle = '#1b2230';
+      g.font = '700 22px ' + FONT;
+      g.textAlign = 'left';
+      g.fillText(ev.name + '　支払明細', padX, y);
+      y += 24;
+      g.fillStyle = '#5b6577';
+      g.font = '13px ' + FONT;
+      const sub = (ev.venue ? '会場: ' + ev.venue + '　／　' : '') + '作成日: ' + fmtToday();
+      g.fillText(sub, padX, y);
+
+      // 列位置
+      const cDate = padX;            // 日付
+      const cTitle = padX + 96;      // 仕事内容
+      const cName = padX + 300;      // 氏名
+      const cStat = padX + 452;      // 状態
+      const cFee = W - padX;         // 金額(右寄せ)
+
+      // 列見出し
+      y = headerH;
+      g.fillStyle = '#eef1fb';
+      g.fillRect(padX - 8, y - 22, W - padX * 2 + 16, colHeadH - 4);
+      g.fillStyle = '#243072';
+      g.font = '700 13px ' + FONT;
+      g.textAlign = 'left';
+      g.fillText('日付', cDate, y);
+      g.fillText('仕事内容', cTitle, y);
+      g.fillText('氏名', cName, y);
+      g.fillText('状態', cStat, y);
+      g.textAlign = 'right';
+      g.fillText('金額', cFee, y);
+
+      // 明細行
+      y = headerH + colHeadH;
+      g.font = '14px ' + FONT;
+      rows.forEach((r, i) => {
+        const top = y - 20;
+        if (i % 2 === 1) { // ゼブラ
+          g.fillStyle = '#f8f9fb';
+          g.fillRect(padX - 8, top, W - padX * 2 + 16, rowH);
+        }
+        g.fillStyle = '#1b2230';
+        g.textAlign = 'left';
+        g.font = '14px ' + FONT;
+        g.fillText(jpDate(r.date) || '―', cDate, y + 6);
+        g.fillText(clip(g, r.title, cName - cTitle - 12), cTitle, y + 6);
+        g.font = '700 14px ' + FONT;
+        g.fillText(clip(g, r.name, cStat - cName - 12), cName, y + 6);
+
+        // 状態バッジ
+        g.font = '11px ' + FONT;
+        if (r.received) { g.fillStyle = '#2f7d51'; g.fillText('受領済み', cStat, y + 6); }
+        else if (r.paid) { g.fillStyle = '#2f3e8f'; g.fillText('支払済み', cStat, y + 6); }
+        else { g.fillStyle = '#9aa3b2'; g.fillText('未払い', cStat, y + 6); }
+
+        g.fillStyle = '#1b2230';
+        g.font = '700 15px ' + FONT;
+        g.textAlign = 'right';
+        g.fillText(yen(r.fee), cFee, y + 6);
+
+        // 区切り線
+        g.strokeStyle = '#e3e7ee'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(padX - 8, top + rowH - 0.5); g.lineTo(W - padX + 8, top + rowH - 0.5); g.stroke();
+        y += rowH;
+      });
+
+      // 合計
+      const tTop = y - 20 + 6;
+      g.fillStyle = '#eef1fb';
+      g.fillRect(padX - 8, tTop, W - padX * 2 + 16, totalH - 12);
+      g.fillStyle = '#243072';
+      g.font = '700 16px ' + FONT;
+      g.textAlign = 'left';
+      g.fillText('合計（' + rows.length + '名）', cDate, tTop + 32);
+      g.font = '700 24px ' + FONT;
+      g.textAlign = 'right';
+      g.fillText(yen(total), cFee, tTop + 34);
+
+      // 補足(受領済み額)
+      y = tTop + totalH + 4;
+      g.fillStyle = '#5b6577';
+      g.font = '12px ' + FONT;
+      g.textAlign = 'left';
+      g.fillText('うち受領済み: ' + yen(receivedTotal) + '　／　未受領: ' + yen(total - receivedTotal), cDate, y + 8);
+
+      // 保存(ダウンロード)
+      const fname = ev.name.replace(/[\\/:*?"<>|]/g, '_') + '_支払明細_' + fmtTodayFile() + '.png';
+      cv.toBlob(blob => {
+        if (!blob) { flash('画像の生成に失敗しました。', false); return; }
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = fname;
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        flash('支払明細を画像で保存しました。', true);
+      }, 'image/png');
+    }
+
+    // 長い文字列を列幅に収める(はみ出しを防ぐ)
+    function clip(g, text, maxW) {
+      text = String(text || '');
+      if (g.measureText(text).width <= maxW) return text;
+      let s = text;
+      while (s.length > 1 && g.measureText(s + '…').width > maxW) s = s.slice(0, -1);
+      return s + '…';
+    }
+    function fmtToday() {
+      const d = new Date();
+      return d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+    }
+    function fmtTodayFile() {
+      const d = new Date(), p = n => String(n).padStart(2, '0');
+      return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate());
     }
 
     async function bulkReceipts(eventId) {
