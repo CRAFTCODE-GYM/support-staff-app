@@ -209,17 +209,48 @@
     async function apply(jobId) {
       flash('');
       const j = findOpenJob(jobId);
+      // 任意の希望メモ(空欄可)。キャンセルなら応募自体を中止。
+      const memo = prompt('参加希望を送ります。\n伝えたいことがあれば入力してください（任意・空欄でOK）。\n例: 午前のみ可、車で行けます など', '');
+      if (memo === null) return; // キャンセル
       const before = j ? j.state : null;
       if (j) { j.state = 'applied'; applyData(CACHE.open); } // 楽観的に「承認待ち」へ
       invalidateMine();
       try {
-        const r = await api('apply', { job_id: jobId });
-        if (r.ok) { flash('応募しました。管理者の承認をお待ちください。', true); }
-        else { if (j) { j.state = before; applyData(CACHE.open); } flash('応募に失敗しました。', false); }
+        const r = await api('apply', { job_id: jobId, memo: (memo || '').trim() });
+        if (r.ok) {
+          flash('参加希望を記録しました。LINEの送信ボタンで運営に送ってください。', true);
+          if (j) openLineShare(j, (memo || '').trim()); // LINEアプリを開いて下書き送信
+        } else {
+          if (j) { j.state = before; applyData(CACHE.open); }
+          flash('応募に失敗しました。', false);
+        }
       } catch (e) {
         if (j) { j.state = before; applyData(CACHE.open); }
         flash('通信エラーが発生しました。', false);
       }
+    }
+
+    // 運営の公式LINEアカウントのID(@から始まる)。ここのトークを直接開く。
+    const LINE_OA_ID = '@184llivl';
+
+    // 公式アカウントとのトーク画面を直接開き、参加希望メッセージを下書きする。
+    // ユーザーは送信ボタンを押すだけで送れる(送信先を選ぶ画面は出ない)。
+    // ※そのユーザーが公式アカウントを友だち追加済みであることが前提。
+    function openLineShare(j, memo) {
+      const uname = currentUser().name || currentUser().email || '';
+      const lines = [];
+      lines.push('【参加希望】');
+      lines.push('大会: ' + j.event_name + (j.venue ? ' @' + j.venue : ''));
+      const detail = [jpDate(j.work_date), j.time_text, j.title].filter(x => x).join(' / ');
+      lines.push('仕事: ' + detail);
+      lines.push('金額: ' + yen(j.fee) + (j.transport_included ? '（交通費込み）' : ''));
+      lines.push('氏名: ' + uname);
+      if (memo) lines.push('希望: ' + memo);
+      const text = lines.join('\n');
+      // oaMessage: 指定した公式アカウントとのトークを開き、メッセージを下書きする
+      const oaId = LINE_OA_ID.replace(/^@/, ''); // 先頭の@は不要
+      const url = 'https://line.me/R/oaMessage/@' + oaId + '/?' + encodeURIComponent(text);
+      window.open(url, '_blank');
     }
     async function cancel(jobId) {
       if (!confirm('この応募を取り消しますか？')) return;
